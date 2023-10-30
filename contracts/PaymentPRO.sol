@@ -11,7 +11,7 @@ contract PaymentPRO is AccessControl {
   event OpenPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
   event DefaultPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
   event TokenSwept(address indexed recipient, address indexed sweeper, address indexed tokenAddress, uint256 tokenAmount);
-  event PaymentReferenceCreated(bytes32 indexed paymentReferenceHash, string paymentReference, ReferencedPayment referencedPaymentEntry);
+  event PaymentReferenceCreated(bytes32 indexed paymentReferenceHash, string paymentReference, StrictPayment referencedPaymentEntry);
   event PaymentReferenceDeleted(bytes32 indexed paymentReferenceHash, string paymentReference);
   event DefaultPaymentConfigAdjusted(address indexed tokenAddress, uint256 tokenAmount);
   event ApprovedPaymentToken(address indexed tokenAddress);
@@ -23,24 +23,25 @@ contract PaymentPRO is AccessControl {
 
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE"); // can manage approvedPaymentTokens / approvedSweepingTokens / approvedSweepRecipients ->
   bytes32 public constant SWEEPER_ROLE = keccak256("SWEEPER_ROLE"); // can sweep tokens -> 
-  bytes32 public constant PAYMENT_MANAGER_ROLE = keccak256("PAYMENT_MANAGER_ROLE"); // can manage default payment configs / enforced payment refs -> 
+  bytes32 public constant PAYMENT_MANAGER_ROLE = keccak256("PAYMENT_MANAGER_ROLE"); // can manage default payment configs / strict payments -> 
 
   struct DefaultPaymentConfig {
     address tokenAddress;
     uint256 tokenAmount;
   }
 
-  struct ReferencedPayment {
+  struct StrictPayment {
     string paymentReference;
     bytes32 paymentReferenceHash;
     address tokenAddress;
     uint256 tokenAmount;
     address payer;
     bool enforcePayer;
+    bool complete;
     bool exists;
   }
 
-  mapping (bytes32 => ReferencedPayment) internal enforcedReferencePayments;
+  mapping (bytes32 => StrictPayment) internal strictPayments;
   mapping (bytes32 => bool) internal referenceReservations;
   mapping (address => bool) internal approvedPaymentTokens;
   mapping (address => bool) internal approvedSweepingTokens;
@@ -106,9 +107,37 @@ contract PaymentPRO is AccessControl {
     }
   }
 
+  // SWEEPING / WITHDRAWAL FUNCTIONS
+
+  function sweepTokenByFullBalance(
+    address _tokenAddress,
+    address _recipientAddress
+  ) external onlySweeper {
+    require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
+    require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
+    IERC20 _tokenContract = IERC20(_tokenAddress);
+    uint256 _tokenBalance = _tokenContract.balanceOf(address(this));
+    _tokenContract.transferFrom(address(this), _recipientAddress, _tokenBalance);
+    emit TokenSwept(_recipientAddress, msg.sender, _tokenAddress, _tokenBalance);
+  }
+
+  function sweepTokenByAmount(
+    address _tokenAddress,
+    address _recipientAddress,
+    uint256 _tokenAmount
+  ) external onlySweeper {
+    require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
+    require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
+    IERC20 _tokenContract = IERC20(_tokenAddress);
+    uint256 _tokenBalance = _tokenContract.balanceOf(address(this));
+    require(_tokenBalance >= _tokenAmount, "INSUFFICIENT_BALANCE");
+    _tokenContract.transferFrom(address(this), _recipientAddress, _tokenAmount);
+    emit TokenSwept(_recipientAddress, msg.sender, _tokenAddress, _tokenAmount);
+  }
+
   // PAYMENT MANAGEMENT FUNCTIONS
 
-  function createEnforcedReferencePayment(
+  function createStrictPayment(
     string memory _reference,
     address _tokenAddress,
     uint256 _tokenAmount,
@@ -118,26 +147,27 @@ contract PaymentPRO is AccessControl {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_ALREADY_RESERVED");
     referenceReservations[_hashedReference] = true;
-    ReferencedPayment memory newReferencedPaymentEntry = ReferencedPayment(
+    StrictPayment memory newStrictPaymentEntry = StrictPayment(
       _reference,
       _hashedReference,
       _tokenAddress,
       _tokenAmount,
       _payer,
       _enforcePayer,
+      false,
       true
     );
-    enforcedReferencePayments[_hashedReference] = newReferencedPaymentEntry;
-    emit PaymentReferenceCreated(_hashedReference, _reference, newReferencedPaymentEntry);
+    strictPayments[_hashedReference] = newStrictPaymentEntry;
+    emit PaymentReferenceCreated(_hashedReference, _reference, newStrictPaymentEntry);
   }
 
-  function deleteEnforcedReferencePayment(
+  function deleteStrictPayment(
     string memory _reference
   ) external onlyPaymentManager {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(referenceReservations[_hashedReference], "REFERENCE_NOT_RESERVED");
     referenceReservations[_hashedReference] = false;
-    enforcedReferencePayments[_hashedReference].exists = false;
+    strictPayments[_hashedReference].exists = false;
     emit PaymentReferenceDeleted(_hashedReference, _reference);
   }
 
@@ -174,22 +204,37 @@ contract PaymentPRO is AccessControl {
     emit DefaultPaymentReceived(_hashedReference, msg.sender, defaultPaymentConfig.tokenAddress, defaultPaymentConfig.tokenAmount, _reference);
   }
 
-  function makeEnforcedPayment(
+  function makeStrictPayment(
     string memory _reference
   ) external {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(referenceReservations[_hashedReference], "REFERENCE_NOT_RESERVED");
-    ReferencedPayment memory referencedPayment = enforcedReferencePayments[_hashedReference];
-    require(approvedPaymentTokens[referencedPayment.tokenAddress], "NOT_APPROVED_TOKEN");
-    require(referencedPayment.tokenAmount > 0, "NO_ZERO_AMOUNT");
-    if(referencedPayment.enforcePayer) {
-      require(referencedPayment.payer == msg.sender, "PAYER_MISMATCH");
+    StrictPayment memory strictPayment = strictPayments[_hashedReference];
+    require(approvedPaymentTokens[strictPayment.tokenAddress], "NOT_APPROVED_TOKEN");
+    require(strictPayment.tokenAmount > 0, "NO_ZERO_AMOUNT");
+    if(strictPayment.enforcePayer) {
+      require(strictPayment.payer == msg.sender, "PAYER_MISMATCH");
     }
-    IERC20(referencedPayment.tokenAddress).transferFrom(msg.sender, address(this), referencedPayment.tokenAmount);
-    emit StrictPaymentReceived(_hashedReference, msg.sender, referencedPayment.tokenAddress, referencedPayment.tokenAmount, _reference);
+    strictPayment.complete = true;
+    strictPayments[_hashedReference] = strictPayment;
+    IERC20(strictPayment.tokenAddress).transferFrom(msg.sender, address(this), strictPayment.tokenAmount);
+    emit StrictPaymentReceived(_hashedReference, msg.sender, strictPayment.tokenAddress, strictPayment.tokenAmount, _reference);
   }
 
   // VIEWS
+
+  function viewStrictPaymentByStringReference(
+    string memory _reference
+  ) external view returns (StrictPayment memory) {
+    bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
+    return strictPayments[_hashedReference];
+  }
+
+  function viewStrictPaymentByHashedReference(
+    bytes32 _hashedReference
+  ) external view returns (StrictPayment memory) {
+    return strictPayments[_hashedReference];
+  }
 
   // MISC
 
