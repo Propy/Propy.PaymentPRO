@@ -11,7 +11,15 @@ contract PaymentPRO is AccessControl {
   event OpenPaymentReceivedUnenforcedReference(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
   event DefaultPaymentReceivedUnenforcedReference(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
   event TokenSwept(address indexed recipient, address indexed sweeper, address indexed tokenAddress, uint256 tokenAmount);
-  event PaymentReferenceCreated(bytes32 indexed paymentReferenceHash, string paymentReference);
+  event PaymentReferenceCreated(bytes32 indexed paymentReferenceHash, string paymentReference, ReferencedPayment referencedPaymentEntry);
+  event PaymentReferenceDeleted(bytes32 indexed paymentReferenceHash, string paymentReference);
+  event DefaultPaymentConfigAdjusted(address indexed tokenAddress, uint256 tokenAmount);
+  event ApprovedPaymentToken(address indexed tokenAddress);
+  event ApprovedSweepingToken(address indexed tokenAddress);
+  event ApprovedTokenSweepRecipient(address indexed recipientAddress);
+  event UnapprovedPaymentToken(address indexed tokenAddress);
+  event UnapprovedSweepingToken(address indexed tokenAddress);
+  event UnapprovedTokenSweepRecipient(address indexed recipientAddress);
 
   bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE"); // can manage approvedPaymentTokens / approvedSweepingTokens / approvedSweepRecipients ->
   bytes32 public constant SWEEPER_ROLE = keccak256("SWEEPER_ROLE"); // can sweep tokens -> 
@@ -71,16 +79,31 @@ contract PaymentPRO is AccessControl {
   function setApprovedPaymentToken(address _tokenAddress, bool _validity) external onlyAdmin {
     require(_tokenAddress != address(0), "NO_ZERO_ADDRESS");
     approvedPaymentTokens[_tokenAddress] = _validity;
+    if(_validity) {
+      emit ApprovedPaymentToken(_tokenAddress);
+    } else {
+      emit UnapprovedPaymentToken(_tokenAddress);
+    }
   }
 
   function setApprovedSweepingToken(address _tokenAddress, bool _validity) external onlyAdmin {
     require(_tokenAddress != address(0), "NO_ZERO_ADDRESS");
     approvedSweepingTokens[_tokenAddress] = _validity;
+    if(_validity) {
+      emit ApprovedSweepingToken(_tokenAddress);
+    } else {
+      emit UnapprovedSweepingToken(_tokenAddress);
+    }
   }
 
   function setApprovedSweepRecipient(address _recipientAddress, bool _validity) external onlyAdmin {
     require(_recipientAddress != address(0), "NO_ZERO_ADDRESS");
     approvedSweepRecipients[_recipientAddress] = _validity;
+    if(_validity) {
+      emit ApprovedTokenSweepRecipient(_recipientAddress);
+    } else {
+      emit UnapprovedTokenSweepRecipient(_recipientAddress);
+    }
   }
 
   // PAYMENT MANAGEMENT FUNCTIONS
@@ -95,7 +118,7 @@ contract PaymentPRO is AccessControl {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_ALREADY_RESERVED");
     referenceReservations[_hashedReference] = true;
-    enforcedReferencePayments[_hashedReference] = ReferencedPayment(
+    ReferencedPayment memory newReferencedPaymentEntry = ReferencedPayment(
       _reference,
       _hashedReference,
       _tokenAddress,
@@ -104,6 +127,8 @@ contract PaymentPRO is AccessControl {
       _enforcePayer,
       true
     );
+    enforcedReferencePayments[_hashedReference] = newReferencedPaymentEntry;
+    emit PaymentReferenceCreated(_hashedReference, _reference, newReferencedPaymentEntry);
   }
 
   function deleteEnforcedReferencePayment(
@@ -113,12 +138,14 @@ contract PaymentPRO is AccessControl {
     require(referenceReservations[_hashedReference], "REFERENCE_NOT_RESERVED");
     referenceReservations[_hashedReference] = false;
     enforcedReferencePayments[_hashedReference].exists = false;
+    emit PaymentReferenceDeleted(_hashedReference, _reference);
   }
 
   function setDefaultPaymentConfig(address _tokenAddress, uint256 _tokenAmount) external onlyPaymentManager {
     require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
     require(_tokenAmount > 0, "NO_ZERO_AMOUNT");
     defaultPaymentConfig = DefaultPaymentConfig(_tokenAddress, _tokenAmount);
+    emit DefaultPaymentConfigAdjusted(_tokenAddress, _tokenAmount);
   }
 
   // PAYMENT FUNCTIONS
