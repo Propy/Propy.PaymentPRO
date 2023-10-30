@@ -7,9 +7,9 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 
 contract PaymentPRO is AccessControl {
 
-  event PaymentReceivedEnforcedReference(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
-  event OpenPaymentReceivedUnenforcedReference(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
-  event DefaultPaymentReceivedUnenforcedReference(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
+  event StrictPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
+  event OpenPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
+  event DefaultPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
   event TokenSwept(address indexed recipient, address indexed sweeper, address indexed tokenAddress, uint256 tokenAmount);
   event PaymentReferenceCreated(bytes32 indexed paymentReferenceHash, string paymentReference, ReferencedPayment referencedPaymentEntry);
   event PaymentReferenceDeleted(bytes32 indexed paymentReferenceHash, string paymentReference);
@@ -160,7 +160,7 @@ contract PaymentPRO is AccessControl {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_RESERVED");
     IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _tokenAmount);
-    emit OpenPaymentReceivedUnenforcedReference(_hashedReference, msg.sender, _tokenAddress, _tokenAmount, _reference);
+    emit OpenPaymentReceived(_hashedReference, msg.sender, _tokenAddress, _tokenAmount, _reference);
   }
 
   function makeDefaultPayment(
@@ -171,7 +171,7 @@ contract PaymentPRO is AccessControl {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_RESERVED");
     IERC20(defaultPaymentConfig.tokenAddress).transferFrom(msg.sender, address(this), defaultPaymentConfig.tokenAmount);
-    emit DefaultPaymentReceivedUnenforcedReference(_hashedReference, msg.sender, defaultPaymentConfig.tokenAddress, defaultPaymentConfig.tokenAmount, _reference);
+    emit DefaultPaymentReceived(_hashedReference, msg.sender, defaultPaymentConfig.tokenAddress, defaultPaymentConfig.tokenAmount, _reference);
   }
 
   function makeEnforcedPayment(
@@ -186,7 +186,7 @@ contract PaymentPRO is AccessControl {
       require(referencedPayment.payer == msg.sender, "PAYER_MISMATCH");
     }
     IERC20(referencedPayment.tokenAddress).transferFrom(msg.sender, address(this), referencedPayment.tokenAmount);
-    emit OpenPaymentReceivedUnenforcedReference(_hashedReference, msg.sender, referencedPayment.tokenAddress, referencedPayment.tokenAmount, _reference);
+    emit StrictPaymentReceived(_hashedReference, msg.sender, referencedPayment.tokenAddress, referencedPayment.tokenAmount, _reference);
   }
 
   // VIEWS
