@@ -21,9 +21,9 @@ contract PaymentPRO is AccessControl {
   event UnapprovedSweepingToken(address indexed tokenAddress);
   event UnapprovedTokenSweepRecipient(address indexed recipientAddress);
 
-  bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE"); // can manage approvedPaymentTokens / approvedSweepingTokens / approvedSweepRecipients ->
-  bytes32 public constant SWEEPER_ROLE = keccak256("SWEEPER_ROLE"); // can sweep tokens -> 
-  bytes32 public constant PAYMENT_MANAGER_ROLE = keccak256("PAYMENT_MANAGER_ROLE"); // can manage default payment configs / strict payments -> 
+  bytes32 public constant APPROVER_ROLE = keccak256("APPROVER_ROLE"); // can manage approvedPaymentTokens / approvedSweepingTokens / approvedSweepRecipients -> 0x408a36151f841709116a4e8aca4e0202874f7f54687dcb863b1ea4672dc9d8cf
+  bytes32 public constant SWEEPER_ROLE = keccak256("SWEEPER_ROLE"); // can sweep tokens -> 0x8aef0597c0be1e090afba1f387ee99f604b5d975ccbed6215cdf146ffd5c49fc
+  bytes32 public constant PAYMENT_MANAGER_ROLE = keccak256("PAYMENT_MANAGER_ROLE"); // can manage default payment configs / strict payments -> 0xa624ddbc4fb31a463e13e6620d62eeaf14248f89110a7fda32b4048499c999a6
 
   struct DefaultPaymentConfig {
     address tokenAddress;
@@ -50,23 +50,32 @@ contract PaymentPRO is AccessControl {
   DefaultPaymentConfig public defaultPaymentConfig;
 
   constructor(
-    address _roleAdmin
+    address _roleAdmin,
+    address _approvedPaymentToken,
+    address _approvedSweepingToken,
+    address _approvedTokenSweepRecipient
   ) {
+    require(_roleAdmin != address(0), "NO_ZERO_ADDRESS");
     _setupRole(DEFAULT_ADMIN_ROLE, _roleAdmin);
-    _setupRole(ADMIN_ROLE, _roleAdmin);
+    _setupRole(APPROVER_ROLE, _roleAdmin);
     _setupRole(SWEEPER_ROLE, _roleAdmin);
     _setupRole(PAYMENT_MANAGER_ROLE, _roleAdmin);
+    require(_approvedPaymentToken != address(0), "NO_ZERO_ADDRESS");
+    require(_approvedSweepingToken != address(0), "NO_ZERO_ADDRESS");
+    require(_approvedTokenSweepRecipient != address(0), "NO_ZERO_ADDRESS");
+    approvedPaymentTokens[_approvedPaymentToken] = true;
+    emit ApprovedPaymentToken(_approvedPaymentToken);
+    approvedSweepingTokens[_approvedSweepingToken] = true;
+    emit ApprovedSweepingToken(_approvedPaymentToken);
+    approvedSweepRecipients[_approvedTokenSweepRecipient] = true;
+    emit ApprovedTokenSweepRecipient(_approvedTokenSweepRecipient);
+    
   }
 
   // ROLE MODIFIERS
 
-  modifier onlyAdmin() {
-    require(hasRole(ADMIN_ROLE, msg.sender), "NOT_ADMIN");
-    _;
-  }
-
-  modifier onlySweeper() {
-    require(hasRole(SWEEPER_ROLE, msg.sender), "NOT_SWEEPER");
+  modifier onlyApprover() {
+    require(hasRole(APPROVER_ROLE, msg.sender), "NOT_APPROVER");
     _;
   }
 
@@ -75,10 +84,16 @@ contract PaymentPRO is AccessControl {
     _;
   }
 
+  modifier onlySweeper() {
+    require(hasRole(SWEEPER_ROLE, msg.sender), "NOT_SWEEPER");
+    _;
+  }
+
   // ADMIN FUNCTIONS
 
-  function setApprovedPaymentToken(address _tokenAddress, bool _validity) external onlyAdmin {
+  function setApprovedPaymentToken(address _tokenAddress, bool _validity) external onlyApprover {
     require(_tokenAddress != address(0), "NO_ZERO_ADDRESS");
+    require(_validity != approvedPaymentTokens[_tokenAddress], "NO_CHANGE");
     approvedPaymentTokens[_tokenAddress] = _validity;
     if(_validity) {
       emit ApprovedPaymentToken(_tokenAddress);
@@ -87,8 +102,9 @@ contract PaymentPRO is AccessControl {
     }
   }
 
-  function setApprovedSweepingToken(address _tokenAddress, bool _validity) external onlyAdmin {
+  function setApprovedSweepingToken(address _tokenAddress, bool _validity) external onlyApprover {
     require(_tokenAddress != address(0), "NO_ZERO_ADDRESS");
+    require(_validity != approvedSweepingTokens[_tokenAddress], "NO_CHANGE");
     approvedSweepingTokens[_tokenAddress] = _validity;
     if(_validity) {
       emit ApprovedSweepingToken(_tokenAddress);
@@ -97,42 +113,15 @@ contract PaymentPRO is AccessControl {
     }
   }
 
-  function setApprovedSweepRecipient(address _recipientAddress, bool _validity) external onlyAdmin {
+  function setApprovedSweepRecipient(address _recipientAddress, bool _validity) external onlyApprover {
     require(_recipientAddress != address(0), "NO_ZERO_ADDRESS");
+    require(_validity != approvedSweepRecipients[_recipientAddress], "NO_CHANGE");
     approvedSweepRecipients[_recipientAddress] = _validity;
     if(_validity) {
       emit ApprovedTokenSweepRecipient(_recipientAddress);
     } else {
       emit UnapprovedTokenSweepRecipient(_recipientAddress);
     }
-  }
-
-  // SWEEPING / WITHDRAWAL FUNCTIONS
-
-  function sweepTokenByFullBalance(
-    address _tokenAddress,
-    address _recipientAddress
-  ) external onlySweeper {
-    require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
-    require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
-    IERC20 _tokenContract = IERC20(_tokenAddress);
-    uint256 _tokenBalance = _tokenContract.balanceOf(address(this));
-    _tokenContract.transferFrom(address(this), _recipientAddress, _tokenBalance);
-    emit TokenSwept(_recipientAddress, msg.sender, _tokenAddress, _tokenBalance);
-  }
-
-  function sweepTokenByAmount(
-    address _tokenAddress,
-    address _recipientAddress,
-    uint256 _tokenAmount
-  ) external onlySweeper {
-    require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
-    require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
-    IERC20 _tokenContract = IERC20(_tokenAddress);
-    uint256 _tokenBalance = _tokenContract.balanceOf(address(this));
-    require(_tokenBalance >= _tokenAmount, "INSUFFICIENT_BALANCE");
-    _tokenContract.transferFrom(address(this), _recipientAddress, _tokenAmount);
-    emit TokenSwept(_recipientAddress, msg.sender, _tokenAddress, _tokenAmount);
   }
 
   // PAYMENT MANAGEMENT FUNCTIONS
@@ -146,6 +135,8 @@ contract PaymentPRO is AccessControl {
   ) external onlyPaymentManager {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_ALREADY_RESERVED");
+    require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
+    require(_tokenAmount > 0, "NO_ZERO_AMOUNT");
     referenceReservations[_hashedReference] = true;
     StrictPayment memory newStrictPaymentEntry = StrictPayment(
       _reference,
@@ -166,6 +157,7 @@ contract PaymentPRO is AccessControl {
   ) external onlyPaymentManager {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(referenceReservations[_hashedReference], "REFERENCE_NOT_RESERVED");
+    require(strictPayments[_hashedReference].complete == false, "PAYMENT_ALREADY_COMPLETE");
     referenceReservations[_hashedReference] = false;
     strictPayments[_hashedReference].exists = false;
     emit PaymentReferenceDeleted(_hashedReference, _reference);
@@ -176,6 +168,36 @@ contract PaymentPRO is AccessControl {
     require(_tokenAmount > 0, "NO_ZERO_AMOUNT");
     defaultPaymentConfig = DefaultPaymentConfig(_tokenAddress, _tokenAmount);
     emit DefaultPaymentConfigAdjusted(_tokenAddress, _tokenAmount);
+  }
+
+  // SWEEPING / WITHDRAWAL FUNCTIONS
+
+  function sweepTokenByFullBalance(
+    address _tokenAddress,
+    address _recipientAddress
+  ) external onlySweeper {
+    require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
+    require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
+    IERC20 _tokenContract = IERC20(_tokenAddress);
+    uint256 _tokenBalance = _tokenContract.balanceOf(address(this));
+    require(_tokenBalance > 0, "NO_BALANCE");
+    _tokenContract.transfer(_recipientAddress, _tokenBalance);
+    emit TokenSwept(_recipientAddress, msg.sender, _tokenAddress, _tokenBalance);
+  }
+
+  function sweepTokenByAmount(
+    address _tokenAddress,
+    address _recipientAddress,
+    uint256 _tokenAmount
+  ) external onlySweeper {
+    require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
+    require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
+    require(_tokenAmount > 0, "NO_ZERO_AMOUNT");
+    IERC20 _tokenContract = IERC20(_tokenAddress);
+    uint256 _tokenBalance = _tokenContract.balanceOf(address(this));
+    require(_tokenBalance >= _tokenAmount, "INSUFFICIENT_BALANCE");
+    _tokenContract.transfer(_recipientAddress, _tokenAmount);
+    emit TokenSwept(_recipientAddress, msg.sender, _tokenAddress, _tokenAmount);
   }
 
   // PAYMENT FUNCTIONS
@@ -196,8 +218,7 @@ contract PaymentPRO is AccessControl {
   function makeDefaultPayment(
     string memory _reference
   ) external {
-    require(approvedPaymentTokens[defaultPaymentConfig.tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
-    require(defaultPaymentConfig.tokenAmount > 0, "NO_ZERO_AMOUNT");
+    require(approvedPaymentTokens[defaultPaymentConfig.tokenAddress], "NOT_APPROVED_TOKEN");
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_RESERVED");
     IERC20(defaultPaymentConfig.tokenAddress).transferFrom(msg.sender, address(this), defaultPaymentConfig.tokenAmount);
@@ -209,14 +230,12 @@ contract PaymentPRO is AccessControl {
   ) external {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(referenceReservations[_hashedReference], "REFERENCE_NOT_RESERVED");
-    StrictPayment memory strictPayment = strictPayments[_hashedReference];
+    StrictPayment storage strictPayment = strictPayments[_hashedReference];
     require(approvedPaymentTokens[strictPayment.tokenAddress], "NOT_APPROVED_TOKEN");
-    require(strictPayment.tokenAmount > 0, "NO_ZERO_AMOUNT");
     if(strictPayment.enforcePayer) {
       require(strictPayment.payer == msg.sender, "PAYER_MISMATCH");
     }
     strictPayment.complete = true;
-    strictPayments[_hashedReference] = strictPayment;
     IERC20(strictPayment.tokenAddress).transferFrom(msg.sender, address(this), strictPayment.tokenAmount);
     emit StrictPaymentReceived(_hashedReference, msg.sender, strictPayment.tokenAddress, strictPayment.tokenAmount, _reference);
   }
@@ -238,8 +257,8 @@ contract PaymentPRO is AccessControl {
 
   // MISC
 
-  function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControl) returns (bool) {
-    return super.supportsInterface(interfaceId);
-  }
+  // function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControl) returns (bool) {
+  //   return super.supportsInterface(interfaceId);
+  // }
 
 }
