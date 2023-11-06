@@ -4,7 +4,7 @@ This repo implements the PaymentPRO.sol contract used by the Propy Transaction P
 
 ## Deployments
 
-Goerli: [``](https://goerli.etherscan.io/address/) (admin address set to ``)
+Sepolia: [`0x2671F689317F636baCB92594342e19Cdd163833e`](https://sepolia.etherscan.io/address/0x2671F689317F636baCB92594342e19Cdd163833e) (all roles assigned to `0x657C0eCF07f6e2B2D01c13F328B230F07b824a57`, role admin is `0x48608159077516aFE77A04ebC0448eC32E6670c1`)
 
 ## ABI
 
