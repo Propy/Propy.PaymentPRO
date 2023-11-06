@@ -8,7 +8,7 @@ Sepolia: [`0x2671F689317F636baCB92594342e19Cdd163833e`](https://sepolia.ethersca
 
 ## ABI
 
-The ABI for interacting with DeedHashedV2 can be found [here](https://github.com/Propy/Propy.PaymentPRO/blob/main/abi/PaymentPROABI.json).
+The ABI for interacting with PaymentPRO can be found [here](https://github.com/Propy/Propy.PaymentPRO/blob/main/abi/PaymentPROABI.json).
 
 The functionality of this repo is dependent upon 1 core contract:
 
@@ -119,6 +119,10 @@ Tests can be run using `npx hardhat test`
 ### Coverage
 
 Test coverage can be derived using `npx hardhat coverage`
+
+Make sure to keep the tests for `PaymentPRO.sol` at 100% coverage for `% Stmts`, `% Branch`, `% Funcs` & `% Lines`:
+
+![100% Coverage](https://vagabond-public-storage.s3.eu-west-2.amazonaws.com/PaymentPRO-test-coverage.png)
 
 ### Deployment
 
