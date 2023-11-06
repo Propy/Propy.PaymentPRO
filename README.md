@@ -75,7 +75,7 @@ Role: Usage of the `sweepTokenByFullBalance` & `sweepTokenByAmount` functions
 
 Description: This role is responsible for triggering "sweeps" of approved tokens accumulated in the PaymentPRO contract to approved recipients. An address with the sweeper role has the option to either sweep a portion of approved token funds to an approved recipient via the `sweepTokenByAmount` function, or the entire balance of the approved token to an approved sweeper via the `sweepTokenByFullBalance` function.
 
-### **SWEEPER_ROLE**:
+### **PAYMENT_MANAGER_ROLE**:
 
 Computation: `keccak256("PAYMENT_MANAGER_ROLE")`
 
