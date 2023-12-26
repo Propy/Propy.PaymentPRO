@@ -1,11 +1,11 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
-contract PaymentPRO is AccessControl {
+contract PaymentPROClonable is AccessControlUpgradeable {
 
   event StrictPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
   event OpenPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
@@ -49,18 +49,22 @@ contract PaymentPRO is AccessControl {
 
   DefaultPaymentConfig public defaultPaymentConfig;
 
-  constructor(
+  bool public isInitialized;
+
+  function initializeContract(
     address _roleAdmin,
     address _approvedPaymentToken,
     address _approvedSweepingToken,
     address _approvedTokenSweepRecipient,
     uint256 _defaultTokenAmount
-  ) {
+  ) external {
+    require(!isInitialized, "ALREADY_INITIALIZED");
     require(_roleAdmin != address(0), "NO_ZERO_ADDRESS");
     require(_approvedPaymentToken != address(0), "NO_ZERO_ADDRESS");
     require(_approvedSweepingToken != address(0), "NO_ZERO_ADDRESS");
     require(_approvedTokenSweepRecipient != address(0), "NO_ZERO_ADDRESS");
     require(_defaultTokenAmount > 0, "NO_ZERO_AMOUNT");
+    isInitialized = true;
     _setupRole(DEFAULT_ADMIN_ROLE, _roleAdmin);
     _setupRole(APPROVER_ROLE, _roleAdmin);
     _setupRole(SWEEPER_ROLE, _roleAdmin);
@@ -181,7 +185,7 @@ contract PaymentPRO is AccessControl {
   ) external onlySweeper {
     require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
     require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
-    IERC20 _tokenContract = IERC20(_tokenAddress);
+    IERC20Upgradeable _tokenContract = IERC20Upgradeable(_tokenAddress);
     uint256 _tokenBalance = _tokenContract.balanceOf(address(this));
     require(_tokenBalance > 0, "NO_BALANCE");
     _tokenContract.transfer(_recipientAddress, _tokenBalance);
@@ -196,7 +200,7 @@ contract PaymentPRO is AccessControl {
     require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
     require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
     require(_tokenAmount > 0, "NO_ZERO_AMOUNT");
-    IERC20 _tokenContract = IERC20(_tokenAddress);
+    IERC20Upgradeable _tokenContract = IERC20Upgradeable(_tokenAddress);
     uint256 _tokenBalance = _tokenContract.balanceOf(address(this));
     require(_tokenBalance >= _tokenAmount, "INSUFFICIENT_BALANCE");
     _tokenContract.transfer(_recipientAddress, _tokenAmount);
@@ -214,7 +218,7 @@ contract PaymentPRO is AccessControl {
     require(_tokenAmount > 0, "NO_ZERO_AMOUNT");
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_RESERVED");
-    IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _tokenAmount);
+    IERC20Upgradeable(_tokenAddress).transferFrom(msg.sender, address(this), _tokenAmount);
     emit OpenPaymentReceived(_hashedReference, msg.sender, _tokenAddress, _tokenAmount, _reference);
   }
 
@@ -224,7 +228,7 @@ contract PaymentPRO is AccessControl {
     require(approvedPaymentTokens[defaultPaymentConfig.tokenAddress], "NOT_APPROVED_TOKEN");
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_RESERVED");
-    IERC20(defaultPaymentConfig.tokenAddress).transferFrom(msg.sender, address(this), defaultPaymentConfig.tokenAmount);
+    IERC20Upgradeable(defaultPaymentConfig.tokenAddress).transferFrom(msg.sender, address(this), defaultPaymentConfig.tokenAmount);
     emit DefaultPaymentReceived(_hashedReference, msg.sender, defaultPaymentConfig.tokenAddress, defaultPaymentConfig.tokenAmount, _reference);
   }
 
@@ -239,7 +243,7 @@ contract PaymentPRO is AccessControl {
       require(strictPayment.payer == msg.sender, "PAYER_MISMATCH");
     }
     strictPayment.complete = true;
-    IERC20(strictPayment.tokenAddress).transferFrom(msg.sender, address(this), strictPayment.tokenAmount);
+    IERC20Upgradeable(strictPayment.tokenAddress).transferFrom(msg.sender, address(this), strictPayment.tokenAmount);
     emit StrictPaymentReceived(_hashedReference, msg.sender, strictPayment.tokenAddress, strictPayment.tokenAmount, _reference);
   }
 
@@ -257,11 +261,5 @@ contract PaymentPRO is AccessControl {
   ) external view returns (StrictPayment memory) {
     return strictPayments[_hashedReference];
   }
-
-  // MISC
-
-  // function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControl) returns (bool) {
-  //   return super.supportsInterface(interfaceId);
-  // }
 
 }
