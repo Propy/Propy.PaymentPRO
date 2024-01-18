@@ -16,5 +16,8 @@
     "hardhat-contract-sizer": "^2.6.1",
     "hardhat-gas-reporter": "^1.0.8",
     "solidity-coverage": "^0.8.2"
+  },
+  "dependencies": {
+    "@nomicfoundation/hardhat-verify": "^2.0.3"
   }
 }

@@ -5,12 +5,13 @@ import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
-contract PaymentPROClonable is AccessControlUpgradeable {
+contract PaymentPROClonableV2 is AccessControlUpgradeable {
 
-  event StrictPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
-  event OpenPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
-  event DefaultPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, string paymentReference);
+  event StrictPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, uint256 ethAmount, string paymentReference);
+  event OpenPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, uint256 ethAmount, string paymentReference);
+  event DefaultPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, uint256 ethAmount, string paymentReference);
   event TokenSwept(address indexed recipient, address indexed sweeper, address indexed tokenAddress, uint256 tokenAmount);
+  event ETHSwept(address indexed recipient, address indexed sweeper, uint256 ethAmount);
   event PaymentReferenceCreated(bytes32 indexed paymentReferenceHash, string paymentReference, StrictPayment referencedPaymentEntry);
   event PaymentReferenceDeleted(bytes32 indexed paymentReferenceHash, string paymentReference);
   event DefaultPaymentConfigAdjusted(address indexed tokenAddress, uint256 tokenAmount);
@@ -28,6 +29,7 @@ contract PaymentPROClonable is AccessControlUpgradeable {
   struct DefaultPaymentConfig {
     address tokenAddress;
     uint256 tokenAmount;
+    uint256 ethAmount;
   }
 
   struct StrictPayment {
@@ -35,6 +37,7 @@ contract PaymentPROClonable is AccessControlUpgradeable {
     bytes32 paymentReferenceHash;
     address tokenAddress;
     uint256 tokenAmount;
+    uint256 ethAmount;
     address payer;
     bool enforcePayer;
     bool complete;
@@ -57,7 +60,8 @@ contract PaymentPROClonable is AccessControlUpgradeable {
     address _approvedPaymentToken,
     address _approvedSweepingToken,
     address _approvedTokenSweepRecipient,
-    uint256 _defaultTokenAmount
+    uint256 _defaultTokenAmount,
+    uint256 _defaultEthAmount
   ) external {
     require(!isInitialized, "ALREADY_INITIALIZED");
     require(_roleAdmin != address(0), "NO_ZERO_ADDRESS");
@@ -76,7 +80,7 @@ contract PaymentPROClonable is AccessControlUpgradeable {
     emit ApprovedSweepingToken(_approvedPaymentToken);
     approvedSweepRecipients[_approvedTokenSweepRecipient] = true;
     emit ApprovedTokenSweepRecipient(_approvedTokenSweepRecipient);
-    defaultPaymentConfig = DefaultPaymentConfig(_approvedSweepingToken, _defaultTokenAmount);
+    defaultPaymentConfig = DefaultPaymentConfig(_approvedSweepingToken, _defaultTokenAmount, _defaultEthAmount);
     emit DefaultPaymentConfigAdjusted(_approvedSweepingToken, _defaultTokenAmount);
   }
 
@@ -138,6 +142,7 @@ contract PaymentPROClonable is AccessControlUpgradeable {
     string memory _reference,
     address _tokenAddress,
     uint256 _tokenAmount,
+    uint256 _ethAmount,
     address _payer,
     bool _enforcePayer
   ) external onlyPaymentManager {
@@ -151,6 +156,7 @@ contract PaymentPROClonable is AccessControlUpgradeable {
       _hashedReference,
       _tokenAddress,
       _tokenAmount,
+      _ethAmount,
       _payer,
       _enforcePayer,
       false,
@@ -171,10 +177,10 @@ contract PaymentPROClonable is AccessControlUpgradeable {
     emit PaymentReferenceDeleted(_hashedReference, _reference);
   }
 
-  function setDefaultPaymentConfig(address _tokenAddress, uint256 _tokenAmount) external onlyPaymentManager {
+  function setDefaultPaymentConfig(address _tokenAddress, uint256 _tokenAmount, uint256 _defaultEthAmount) external onlyPaymentManager {
     require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN_ADDRESS");
     require(_tokenAmount > 0, "NO_ZERO_AMOUNT");
-    defaultPaymentConfig = DefaultPaymentConfig(_tokenAddress, _tokenAmount);
+    defaultPaymentConfig = DefaultPaymentConfig(_tokenAddress, _tokenAmount, _defaultEthAmount);
     emit DefaultPaymentConfigAdjusted(_tokenAddress, _tokenAmount);
   }
 
@@ -209,25 +215,41 @@ contract PaymentPROClonable is AccessControlUpgradeable {
     emit TokenSwept(_recipientAddress, msg.sender, _tokenAddress, _tokenAmount);
   }
 
+  function sweepETHByFullBalance(
+    address _recipientAddress
+  ) external onlySweeper {
+    require(approvedSweepRecipients[_recipientAddress], "NOT_APPROVED_RECIPIENT");
+    uint256 sweepAmount = address(this).balance;
+    require(sweepAmount > 0, "NO_BALANCE");
+    (bool success, ) = _recipientAddress.call{value: sweepAmount}("");
+    require(success, "ETH_TRANSFER_FAILED");
+    emit ETHSwept(_recipientAddress, msg.sender, sweepAmount);
+  } 
+
   // PAYMENT FUNCTIONS
 
   function makeOpenPayment(
     address _tokenAddress,
     uint256 _tokenAmount,
+    uint256 _ethAmount,
     string memory _reference
-  ) external {
+  ) external payable {
     require(approvedPaymentTokens[_tokenAddress], "NOT_APPROVED_TOKEN");
     require(_tokenAmount > 0, "NO_ZERO_AMOUNT");
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_RESERVED");
-    bool success = IERC20Upgradeable(_tokenAddress).transferFrom(msg.sender, address(this), _tokenAmount);
-    require(success, "PAYMENT_FAILED");
-    emit OpenPaymentReceived(_hashedReference, msg.sender, _tokenAddress, _tokenAmount, _reference);
+    bool successERC20 = IERC20Upgradeable(_tokenAddress).transferFrom(msg.sender, address(this), _tokenAmount);
+    require(successERC20, "PAYMENT_FAILED");
+    // if(_ethAmount != msg.value) {
+    //   require(msg.value == _ethAmount, "INCORRECT_ETH_AMOUNT");
+    // }
+    require(msg.value == _ethAmount, "INCORRECT_ETH_AMOUNT");
+    emit OpenPaymentReceived(_hashedReference, msg.sender, _tokenAddress, _tokenAmount, _ethAmount, _reference);
   }
 
   function makeDefaultPayment(
     string memory _reference
-  ) external {
+  ) external payable {
     require(approvedPaymentTokens[defaultPaymentConfig.tokenAddress], "NOT_APPROVED_TOKEN");
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(!referenceReservations[_hashedReference], "REFERENCE_RESERVED");
@@ -235,12 +257,17 @@ contract PaymentPROClonable is AccessControlUpgradeable {
     defaultReferenceReservations[_hashedReference] = true;
     bool success = IERC20Upgradeable(defaultPaymentConfig.tokenAddress).transferFrom(msg.sender, address(this), defaultPaymentConfig.tokenAmount);
     require(success, "PAYMENT_FAILED");
-    emit DefaultPaymentReceived(_hashedReference, msg.sender, defaultPaymentConfig.tokenAddress, defaultPaymentConfig.tokenAmount, _reference);
+    uint256 _ethAmount = defaultPaymentConfig.ethAmount;
+    // if(_ethAmount != msg.value) {
+    //   require(msg.value == _ethAmount, "INCORRECT_ETH_AMOUNT");
+    // }
+    require(msg.value == _ethAmount, "INCORRECT_ETH_AMOUNT");
+    emit DefaultPaymentReceived(_hashedReference, msg.sender, defaultPaymentConfig.tokenAddress, defaultPaymentConfig.tokenAmount, _ethAmount, _reference);
   }
 
   function makeStrictPayment(
     string memory _reference
-  ) external {
+  ) external payable {
     bytes32 _hashedReference = keccak256(abi.encodePacked(_reference));
     require(referenceReservations[_hashedReference], "REFERENCE_NOT_RESERVED");
     StrictPayment storage strictPayment = strictPayments[_hashedReference];
@@ -252,7 +279,12 @@ contract PaymentPROClonable is AccessControlUpgradeable {
     strictPayment.complete = true;
     bool success = IERC20Upgradeable(strictPayment.tokenAddress).transferFrom(msg.sender, address(this), strictPayment.tokenAmount);
     require(success, "PAYMENT_FAILED");
-    emit StrictPaymentReceived(_hashedReference, msg.sender, strictPayment.tokenAddress, strictPayment.tokenAmount, _reference);
+    uint256 _ethAmount = strictPayment.ethAmount;
+    // if(_ethAmount != msg.value) {
+    //   require(msg.value == _ethAmount, "INCORRECT_ETH_AMOUNT");
+    // }
+    require(msg.value == _ethAmount, "INCORRECT_ETH_AMOUNT");
+    emit StrictPaymentReceived(_hashedReference, msg.sender, strictPayment.tokenAddress, strictPayment.tokenAmount, _ethAmount, _reference);
   }
 
   // VIEWS
