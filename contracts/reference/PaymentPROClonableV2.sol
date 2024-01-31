@@ -258,9 +258,6 @@ contract PaymentPROClonableV2 is AccessControlUpgradeable {
     bool success = IERC20Upgradeable(defaultPaymentConfig.tokenAddress).transferFrom(msg.sender, address(this), defaultPaymentConfig.tokenAmount);
     require(success, "PAYMENT_FAILED");
     uint256 _ethAmount = defaultPaymentConfig.ethAmount;
-    // if(_ethAmount != msg.value) {
-    //   require(msg.value == _ethAmount, "INCORRECT_ETH_AMOUNT");
-    // }
     require(msg.value == _ethAmount, "INCORRECT_ETH_AMOUNT");
     emit DefaultPaymentReceived(_hashedReference, msg.sender, defaultPaymentConfig.tokenAddress, defaultPaymentConfig.tokenAmount, _ethAmount, _reference);
   }
