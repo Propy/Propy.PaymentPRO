@@ -49,6 +49,42 @@ interface IPaymentPRO is IAccessControl {
 }
 ```
 
+## Events
+
+```solidity
+event StrictPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, uint256 ethAmount, string paymentReference);
+
+event OpenPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, uint256 ethAmount, string paymentReference);
+
+event DefaultPaymentReceived(bytes32 indexed paymentReferenceHash, address indexed sender, address indexed tokenAddress, uint256 tokenAmount, uint256 ethAmount, string paymentReference);
+
+event TokenSwept(address indexed recipient, address indexed sweeper, address indexed tokenAddress, uint256 tokenAmount);
+
+event ETHSwept(address indexed recipient, address indexed sweeper, uint256 ethAmount);
+
+event PaymentReferenceCreated(bytes32 indexed paymentReferenceHash, string paymentReference, StrictPayment referencedPaymentEntry);
+
+event PaymentReferenceDeleted(bytes32 indexed paymentReferenceHash, string paymentReference);
+
+event DefaultPaymentConfigAdjusted(address indexed tokenAddress, uint256 tokenAmount);
+
+event ApprovedPaymentToken(address indexed tokenAddress);
+
+event ApprovedSweepingToken(address indexed tokenAddress);
+
+event ApprovedTokenSweepRecipient(address indexed recipientAddress);
+
+event UnapprovedPaymentToken(address indexed tokenAddress);
+
+event UnapprovedSweepingToken(address indexed tokenAddress);
+
+event UnapprovedTokenSweepRecipient(address indexed recipientAddress);
+```
+
+## Detecting Default Payments
+
+In cases where one would like to monitor the contract for default payments, it is recommended to monitor the contract for `DefaultPaymentReceived` events. The `DefaultPaymentReceived` event is emitted by successful calls made to the `makeDefaultPayment` function.
+
 ## Role References
 
 We use OpenZeppelin's [AccessControl](https://docs.openzeppelin.com/contracts/4.x/access-control) library to manage roles and permissions of addresses.
