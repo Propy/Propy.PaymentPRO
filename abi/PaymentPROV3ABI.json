@@ -1,0 +1,40 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_roleAdmin",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_approvedPaymentToken",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_approvedSweepingToken",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_approvedTokenSweepRecipient",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_defaultTokenAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_defaultEthAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "initializeContract",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
